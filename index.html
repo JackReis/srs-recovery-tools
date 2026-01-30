@@ -1,0 +1,763 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Rib Recovery Coordinator</title>
+    <style>
+        :root {
+            --primary: #667eea;
+            --secondary: #764ba2;
+            --success: #4caf50;
+            --warning: #ff9800;
+            --bg-gradient: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            --glass: rgba(255, 255, 255, 0.95);
+            --text-dark: #2d3748;
+            --text-light: #f7fafc;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; }
+        
+        body {
+            background: var(--bg-gradient);
+            color: var(--text-dark);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* Layout & Containers */
+        .app-container {
+            max-width: 800px;
+            margin: 20px auto;
+            background: var(--glass);
+            border-radius: 20px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+            display: flex;
+            flex-direction: column;
+            height: 90vh;
+            overflow: hidden;
+        }
+
+        header {
+            padding: 20px;
+            border-bottom: 1px solid rgba(0,0,0,0.1);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        h1 { font-size: 1.2rem; color: var(--secondary); }
+        .badge { background: var(--secondary); color: white; padding: 4px 8px; border-radius: 12px; font-size: 0.8rem; }
+
+        /* Navigation / Views */
+        main {
+            flex: 1;
+            overflow-y: auto;
+            padding: 20px;
+            position: relative;
+        }
+
+        .view-section {
+            display: none;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .view-section.active {
+            display: block;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* Region Selection - Heat Map Grid */
+        .anatomy-grid {
+            display: grid;
+            grid-template-columns: 60px repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 20px;
+        }
+
+        .grid-header { font-weight: bold; text-align: center; font-size: 0.8rem; color: #666; }
+        
+        .rib-row { display: contents; }
+        .rib-label { display: flex; align-items: center; justify-content: center; font-weight: bold; color: var(--secondary); }
+        
+        .zone-btn {
+            aspect-ratio: 1.5;
+            background: rgba(102, 126, 234, 0.1);
+            border: 1px solid rgba(102, 126, 234, 0.2);
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s;
+            position: relative;
+        }
+
+        .zone-btn:hover { background: rgba(102, 126, 234, 0.3); }
+        .zone-btn.selected {
+            background: var(--primary);
+            color: white;
+            box-shadow: 0 0 10px rgba(102, 126, 234, 0.5);
+            border-color: var(--secondary);
+        }
+
+        /* Breathing Pacer */
+        .pacer-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            height: 100%;
+            text-align: center;
+        }
+
+        .breath-circle {
+            width: 200px;
+            height: 200px;
+            border-radius: 50%;
+            background: conic-gradient(var(--primary), var(--secondary));
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 30px 0;
+            box-shadow: 0 0 30px rgba(118, 75, 162, 0.3);
+            transition: transform 0.1s linear, filter 0.3s;
+            position: relative;
+        }
+
+        .breath-circle::before {
+            content: '';
+            position: absolute;
+            width: 90%;
+            height: 90%;
+            background: white;
+            border-radius: 50%;
+        }
+
+        .breath-text {
+            position: relative;
+            z-index: 2;
+            font-size: 1.5rem;
+            font-weight: bold;
+            color: var(--secondary);
+        }
+
+        .instruction-card {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 10px;
+            border-left: 4px solid var(--primary);
+            margin-bottom: 20px;
+            width: 100%;
+            text-align: left;
+        }
+
+        /* Controls & Inputs */
+        .control-panel {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 10px;
+            width: 100%;
+            margin-top: auto;
+        }
+
+        button {
+            padding: 12px;
+            border: none;
+            border-radius: 8px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.1s;
+        }
+
+        button:active { transform: scale(0.98); }
+
+        .btn-primary {
+            background: var(--primary);
+            color: white;
+            width: 100%;
+        }
+
+        .btn-secondary { background: #e2e8f0; color: var(--text-dark); }
+        .btn-success { background: var(--success); color: white; }
+        .btn-outline { border: 1px solid var(--primary); background: transparent; color: var(--primary); }
+
+        input[type="text"] {
+            width: 100%;
+            padding: 12px;
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            margin-bottom: 15px;
+        }
+
+        /* Feedback Buttons */
+        .feedback-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 10px;
+            width: 100%;
+            margin-top: 20px;
+        }
+
+        .feedback-btn {
+            padding: 15px;
+            background: white;
+            border: 1px solid #eee;
+            border-radius: 10px;
+            box-shadow: 0 2px 5px rgba(0,0,0,0.05);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+        
+        .feedback-btn span { font-size: 1.2rem; margin-bottom: 5px; }
+
+        /* Sliders */
+        .slider-group {
+            margin-bottom: 15px;
+        }
+        .slider-group label { display: flex; justify-content: space-between; font-size: 0.9rem; margin-bottom: 5px; }
+        input[type="range"] { width: 100%; }
+
+        /* History/Stats */
+        .history-item {
+            background: white;
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+            border-left: 3px solid var(--secondary);
+            font-size: 0.9rem;
+        }
+
+        /* Utility */
+        .hidden { display: none !important; }
+        .text-sm { font-size: 0.8rem; color: #718096; }
+        .mt-2 { margin-top: 1rem; }
+        
+        /* Suggestion Pill */
+        .suggestion {
+            background: #edf2f7;
+            padding: 8px 12px;
+            border-radius: 20px;
+            font-size: 0.85rem;
+            margin: 5px;
+            cursor: pointer;
+            display: inline-block;
+        }
+        .suggestion:hover { background: #e2e8f0; }
+
+    </style>
+</head>
+<body>
+
+<div class="app-container">
+    <header>
+        <div>
+            <h1>Rib Recovery</h1>
+            <div class="text-sm">Breathing & Stabilization</div>
+        </div>
+        <button id="historyBtn" class="btn-secondary" style="width:auto; padding: 8px 15px;">History</button>
+    </header>
+
+    <main>
+        <!-- VIEW 1: SELECTION -->
+        <div id="view-selection" class="view-section active">
+            <h3>Where do you need support?</h3>
+            
+            <!-- NLP Input -->
+            <div style="margin: 15px 0;">
+                <input type="text" id="symptomInput" placeholder="e.g., 'Tight under left shoulder blade' or 'Rib 8 click'">
+                <div id="suggestionBox" style="display:flex; flex-wrap:wrap;">
+                    <span class="suggestion" onclick="app.fillSymptom('Tight under scapula')">Tight Scapula</span>
+                    <span class="suggestion" onclick="app.fillSymptom('Clicking Rib 10')">Clicking Rib 10</span>
+                    <span class="suggestion" onclick="app.fillSymptom('Pain under breast')">Anterior Pain</span>
+                </div>
+            </div>
+
+            <!-- Grid Map -->
+            <div class="anatomy-grid" id="ribGrid">
+                <div class="grid-header"></div>
+                <div class="grid-header">Post (Back)</div>
+                <div class="grid-header">Lat (Side)</div>
+                <div class="grid-header">Ant (Front)</div>
+                <!-- Generated via JS -->
+            </div>
+
+            <div class="mt-2" id="selectionSummary" style="padding: 10px; background: #ebf4ff; border-radius: 8px; color: var(--secondary); font-weight: bold; display: none;">
+                Selected: <span id="selectedRegionText">None</span>
+            </div>
+
+            <button class="btn-primary mt-2" onclick="app.confirmSelection()">Continue to Setup</button>
+        </div>
+
+        <!-- VIEW 2: SETUP -->
+        <div id="view-setup" class="view-section">
+            <h3>Session Configuration</h3>
+            
+            <div class="instruction-card">
+                <h4>Recommended Pattern</h4>
+                <p id="recommendationText" style="margin: 5px 0;">Loading...</p>
+                <small id="recommendationReason" style="color: #666;"></small>
+            </div>
+
+            <div class="slider-group">
+                <label>Pattern Type</label>
+                <select id="patternSelect" style="width:100%; padding: 10px; border-radius:8px;">
+                    <option value="box">Box Breathing (Stabilization)</option>
+                    <option value="4-7-8">4-7-8 (Posterior Release)</option>
+                    <option value="bucket-handle">Bucket Handle (Lateral)</option>
+                    <option value="pump-handle">Pump Handle (Anterior)</option>
+                    <option value="physiological-sigh">Physiological Sigh (Reset)</option>
+                </select>
+            </div>
+
+            <div class="slider-group">
+                <label>Audio Cues <input type="checkbox" id="audioToggle"></label>
+            </div>
+
+            <button class="btn-primary mt-2" onclick="app.startSession()">Start Session</button>
+            <button class="btn-secondary mt-2" onclick="app.nav('view-selection')">Back</button>
+        </div>
+
+        <!-- VIEW 3: ACTIVE SESSION -->
+        <div id="view-session" class="view-section">
+            <div class="pacer-container">
+                <div class="breath-circle" id="breathCircle">
+                    <div class="breath-text" id="breathText">Ready</div>
+                </div>
+                
+                <div class="instruction-card" id="activeInstruction">
+                    <h4 id="phaseTitle">Prepare</h4>
+                    <p id="phaseInstruction">Sit comfortably, feet flat.</p>
+                    <small id="muscleCue" style="color: var(--primary); font-weight:bold;"></small>
+                </div>
+
+                <div class="feedback-grid">
+                    <button class="feedback-btn" onclick="app.logEvent('felt-release')"><span>✨</span>Release</button>
+                    <button class="feedback-btn" onclick="app.logEvent('muscle-engaged')"><span>💪</span>Engaged</button>
+                    <button class="feedback-btn" onclick="app.logEvent('clicking')"><span>⚠️</span>Click/Pop</button>
+                    <button class="feedback-btn" onclick="app.logEvent('pain')"><span>🔴</span>Pain</button>
+                </div>
+            </div>
+            <button class="btn-secondary mt-2" onclick="app.endSession()" style="margin-top: 20px;">End Session</button>
+        </div>
+
+        <!-- VIEW 4: POST SESSION -->
+        <div id="view-summary" class="view-section">
+            <h3>Session Summary</h3>
+            
+            <div class="slider-group">
+                <label>Pain (1-10) <span>After: <output id="painVal">0</output></span></label>
+                <input type="range" min="0" max="10" value="0" oninput="painVal.value=this.value" id="postPain">
+            </div>
+            
+            <div class="slider-group">
+                <label>Mobility (1-10) <span>After: <output id="mobVal">0</output></span></label>
+                <input type="range" min="0" max="10" value="0" oninput="mobVal.value=this.value" id="postMobility">
+            </div>
+
+            <textarea id="sessionNotes" placeholder="Notes (e.g. 'Morning stiffness, T7 released after 5 mins')" style="width:100%; padding:10px; border:1px solid #ddd; border-radius:8px; height:80px;"></textarea>
+
+            <button class="btn-success mt-2" onclick="app.saveSession()">Save Session</button>
+            <button class="btn-secondary mt-2" onclick="app.nav('view-selection')">Discard</button>
+        </div>
+
+        <!-- VIEW 5: HISTORY -->
+        <div id="view-history" class="view-section">
+            <h3>History & Export</h3>
+            <div id="historyList" style="max-height: 300px; overflow-y:auto;">
+                <!-- JS Populated -->
+            </div>
+            <div class="control-panel">
+                <button class="btn-secondary" onclick="app.exportData('json')">Export JSON</button>
+                <button class="btn-secondary" onclick="app.exportData('csv')">Export CSV</button>
+            </div>
+            <button class="btn-outline mt-2" onclick="app.nav('view-selection')" style="width:100%">Back to Home</button>
+        </div>
+
+    </main>
+</div>
+
+<script>
+/**
+ * RIB RECOVERY COORDINATOR
+ * Focus: Hansen Repair Recovery, PLLA/PLGA degradation window
+ */
+
+const PATTERNS = {
+    'box': { inhale: 4, hold1: 4, exhale: 4, hold2: 4, name: "Box Breathing" },
+    '4-7-8': { inhale: 4, hold1: 7, exhale: 8, hold2: 0, name: "4-7-8 Relax" },
+    'physiological-sigh': { inhale: 2, hold1: 1, exhale: 4, hold2: 1, name: "Physiological Sigh" },
+    'diaphragmatic': { inhale: 4, hold1: 2, exhale: 6, hold2: 2, name: "Diaphragmatic" },
+    'bucket-handle': { inhale: 5, hold1: 3, exhale: 7, hold2: 0, name: "Bucket Handle" },
+    'pump-handle': { inhale: 4, hold1: 2, exhale: 6, hold2: 1, name: "Pump Handle" }
+};
+
+const CUES = {
+    'posterior': {
+        inhale: "Expand back ribs into the chair/floor. Feel the breath widen your shoulder blades.",
+        exhale: "Engage serratus/rhomboids. Imagine connecting right hip to left scapula (Spiral Line).",
+        muscle: "Target: Rhomboids & Lower Traps"
+    },
+    'lateral': {
+        inhale: "Breathe into your side (bucket handle motion). Open the intercostal spaces.",
+        exhale: "Gently knit the ribs down and in. Activate obliques without crunching.",
+        muscle: "Target: Intercostals & Serratus Anterior"
+    },
+    'anterior': {
+        inhale: "Lift the sternum gently (pump handle). Don't flare the bottom ribs.",
+        exhale: "Soften the sternum. Allow pectorals to release/lengthen.",
+        muscle: "Target: Pectorals & Diaphragm"
+    },
+    'general': {
+        inhale: "360-degree expansion. Low and slow.",
+        exhale: "Controlled release. engage deep core.",
+        muscle: "Target: Global Stabilization"
+    }
+};
+
+class RibApp {
+    constructor() {
+        this.state = {
+            selectedRib: null,
+            selectedPos: null, // 'posterior', 'lateral', 'anterior'
+            currentPattern: 'box',
+            isRunning: false,
+            phase: 'idle',
+            sessionLog: [],
+            startTime: null,
+            audioEnabled: false
+        };
+        
+        this.audioCtx = null;
+        this.timer = null;
+        this.init();
+    }
+
+    init() {
+        this.renderGrid();
+        this.loadHistory();
+        
+        // Bind inputs
+        document.getElementById('symptomInput').addEventListener('input', (e) => this.handleNLP(e.target.value));
+        document.getElementById('audioToggle').addEventListener('change', (e) => this.state.audioEnabled = e.target.checked);
+        document.getElementById('patternSelect').addEventListener('change', (e) => this.state.currentPattern = e.target.value);
+        document.getElementById('historyBtn').addEventListener('click', () => this.nav('view-history'));
+    }
+
+    renderGrid() {
+        const grid = document.getElementById('ribGrid');
+        const positions = ['posterior', 'lateral', 'anterior'];
+        
+        for (let r = 4; r <= 12; r++) {
+            // Label
+            const label = document.createElement('div');
+            label.className = 'rib-label';
+            label.innerText = `R${r}`;
+            grid.appendChild(label);
+
+            // Buttons
+            positions.forEach(pos => {
+                const btn = document.createElement('div');
+                btn.className = 'zone-btn';
+                btn.dataset.rib = r;
+                btn.dataset.pos = pos;
+                btn.onclick = () => this.selectZone(r, pos, btn);
+                grid.appendChild(btn);
+            });
+        }
+    }
+
+    selectZone(rib, pos, btnElem) {
+        // Clear previous
+        document.querySelectorAll('.zone-btn').forEach(b => b.classList.remove('selected'));
+        
+        // Set new
+        btnElem.classList.add('selected');
+        this.state.selectedRib = rib;
+        this.state.selectedPos = pos;
+        
+        // Update UI
+        document.getElementById('selectionSummary').style.display = 'block';
+        document.getElementById('selectedRegionText').innerText = `Rib ${rib} - ${pos.charAt(0).toUpperCase() + pos.slice(1)}`;
+    }
+
+    fillSymptom(text) {
+        document.getElementById('symptomInput').value = text;
+        this.handleNLP(text);
+    }
+
+    handleNLP(text) {
+        text = text.toLowerCase();
+        let rib = 8; // default middle
+        let pos = 'lateral';
+
+        // Simple keyword matching
+        if (text.includes('scapula') || text.includes('shoulder') || text.includes('back')) pos = 'posterior';
+        if (text.includes('breast') || text.includes('sternum') || text.includes('front')) pos = 'anterior';
+        if (text.includes('side') || text.includes('armpit') || text.includes('flank')) pos = 'lateral';
+
+        // Extract numbers
+        const numMatch = text.match(/(\d+)/);
+        if (numMatch) {
+            let r = parseInt(numMatch[0]);
+            if (r >= 4 && r <= 12) rib = r;
+        }
+
+        // Visual feedback (simulate click)
+        const targetBtn = document.querySelector(`.zone-btn[data-rib="${rib}"][data-pos="${pos}"]`);
+        if (targetBtn) this.selectZone(rib, pos, targetBtn);
+    }
+
+    confirmSelection() {
+        if (!this.state.selectedPos) {
+            alert("Please select a region on the map or describe symptoms.");
+            return;
+        }
+        this.recommendPattern();
+        this.nav('view-setup');
+    }
+
+    recommendPattern() {
+        const pos = this.state.selectedPos;
+        let pattern = 'box';
+        let reason = "Standard stabilization.";
+
+        if (pos === 'posterior') {
+            pattern = '4-7-8';
+            reason = "Long exhale promotes posterior expansion and rhomboid release.";
+        } else if (pos === 'lateral') {
+            pattern = 'bucket-handle';
+            reason = "Focuses on widening intercostal spaces laterally.";
+        } else if (pos === 'anterior') {
+            pattern = 'pump-handle';
+            reason = "Gentle anterior mobilization without flaring.";
+        }
+
+        document.getElementById('patternSelect').value = pattern;
+        this.state.currentPattern = pattern;
+        document.getElementById('recommendationText').innerText = PATTERNS[pattern].name;
+        document.getElementById('recommendationReason').innerText = reason;
+    }
+
+    nav(viewId) {
+        document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
+        document.getElementById(viewId).classList.add('active');
+    }
+
+    /* --- SESSION ENGINE --- */
+
+    startSession() {
+        this.state.isRunning = true;
+        this.state.startTime = new Date();
+        this.state.sessionLog = [];
+        this.nav('view-session');
+        
+        if (this.state.audioEnabled && !this.audioCtx) {
+            this.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+        }
+
+        this.runCycle();
+    }
+
+    runCycle() {
+        if (!this.state.isRunning) return;
+
+        const pattern = PATTERNS[this.state.currentPattern];
+        const phases = [
+            { name: 'inhale', duration: pattern.inhale, color: '#667eea', scale: 1.3 },
+            { name: 'hold', duration: pattern.hold1, color: '#764ba2', scale: 1.3 },
+            { name: 'exhale', duration: pattern.exhale, color: '#4caf50', scale: 0.8 },
+            { name: 'hold', duration: pattern.hold2, color: '#764ba2', scale: 0.8 }
+        ];
+
+        let step = 0;
+        
+        const nextPhase = () => {
+            if (!this.state.isRunning) return;
+            
+            // Skip 0 second phases
+            if (phases[step].duration === 0) {
+                step = (step + 1) % phases.length;
+                nextPhase();
+                return;
+            }
+
+            const p = phases[step];
+            this.updatePacer(p);
+            this.playTone(p.name);
+
+            setTimeout(() => {
+                step = (step + 1) % phases.length;
+                nextPhase();
+            }, p.duration * 1000);
+        };
+
+        nextPhase();
+    }
+
+    updatePacer(phaseObj) {
+        const circle = document.getElementById('breathCircle');
+        const text = document.getElementById('breathText');
+        const title = document.getElementById('phaseTitle');
+        const instr = document.getElementById('phaseInstruction');
+        const muscle = document.getElementById('muscleCue');
+        const regionCues = CUES[this.state.selectedPos] || CUES['general'];
+
+        // Visuals
+        circle.style.transform = `scale(${phaseObj.scale})`;
+        circle.style.background = phaseObj.color;
+        text.innerText = phaseObj.name.toUpperCase();
+
+        // Text Cues
+        title.innerText = phaseObj.name.toUpperCase();
+        if (phaseObj.name === 'inhale') {
+            instr.innerText = regionCues.inhale;
+            muscle.innerText = "Gentle Expansion";
+        } else if (phaseObj.name === 'exhale') {
+            instr.innerText = regionCues.exhale;
+            muscle.innerText = regionCues.muscle;
+        } else {
+            instr.innerText = "Maintain stability. Do not clamp down.";
+            muscle.innerText = "Hold";
+        }
+    }
+
+    playTone(phase) {
+        if (!this.state.audioEnabled || !this.audioCtx) return;
+        
+        const osc = this.audioCtx.createOscillator();
+        const gain = this.audioCtx.createGain();
+        
+        osc.connect(gain);
+        gain.connect(this.audioCtx.destination);
+        
+        const freq = phase === 'inhale' ? 440 : (phase === 'exhale' ? 330 : 220);
+        osc.frequency.value = freq;
+        
+        gain.gain.setValueAtTime(0.1, this.audioCtx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.001, this.audioCtx.currentTime + 0.5);
+        
+        osc.start();
+        osc.stop(this.audioCtx.currentTime + 0.5);
+    }
+
+    logEvent(type) {
+        const timestamp = new Date();
+        this.state.sessionLog.push({ type, time: timestamp });
+        
+        // Visual feedback
+        const btn = document.activeElement;
+        if(btn) {
+            const original = btn.style.transform;
+            btn.style.transform = "scale(0.95)";
+            setTimeout(() => btn.style.transform = original, 100);
+        }
+    }
+
+    endSession() {
+        this.state.isRunning = false;
+        this.nav('view-summary');
+    }
+
+    /* --- DATA & STORAGE --- */
+
+    saveSession() {
+        const notes = document.getElementById('sessionNotes').value;
+        const pain = document.getElementById('postPain').value;
+        const mobility = document.getElementById('postMobility').value;
+
+        const record = {
+            id: Date.now(),
+            date: this.state.startTime.toISOString(),
+            region: { rib: this.state.selectedRib, pos: this.state.selectedPos },
+            pattern: this.state.currentPattern,
+            durationSec: Math.round((new Date() - this.state.startTime) / 1000),
+            events: this.state.sessionLog,
+            metrics: { pain, mobility },
+            notes: notes
+        };
+
+        const history = JSON.parse(localStorage.getItem('ribRecoverySessions') || '[]');
+        history.unshift(record);
+        localStorage.setItem('ribRecoverySessions', JSON.stringify(history));
+
+        alert("Session Saved!");
+        this.loadHistory();
+        this.nav('view-selection');
+    }
+
+    loadHistory() {
+        const history = JSON.parse(localStorage.getItem('ribRecoverySessions') || '[]');
+        const container = document.getElementById('historyList');
+        container.innerHTML = '';
+
+        if (history.length === 0) {
+            container.innerHTML = '<p style="text-align:center; color:#999;">No sessions recorded yet.</p>';
+            return;
+        }
+
+        history.forEach(session => {
+            const el = document.createElement('div');
+            el.className = 'history-item';
+            const date = new Date(session.date).toLocaleDateString();
+            const time = new Date(session.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            
+            el.innerHTML = `
+                <div style="display:flex; justify-content:space-between;">
+                    <strong>${date} at ${time}</strong>
+                    <span>Rib ${session.region.rib || '?'} (${session.region.pos || 'General'})</span>
+                </div>
+                <div class="text-sm">${session.pattern} • ${Math.floor(session.durationSec/60)} mins • Pain: ${session.metrics.pain}/10</div>
+                ${session.notes ? `<div style="margin-top:5px; font-style:italic;">"${session.notes}"</div>` : ''}
+            `;
+            container.appendChild(el);
+        });
+    }
+
+    exportData(format) {
+        const history = localStorage.getItem('ribRecoverySessions') || '[]';
+        let content = '', type = '';
+        let filename = `rib_recovery_export_${new Date().toISOString().slice(0,10)}`;
+
+        if (format === 'json') {
+            content = history;
+            type = 'application/json';
+            filename += '.json';
+        } else {
+            // Simple CSV
+            const data = JSON.parse(history);
+            const headers = ['Date', 'Rib', 'Position', 'Pattern', 'Duration(s)', 'Pain', 'Mobility', 'Notes'];
+            content = headers.join(',') + '\n';
+            data.forEach(row => {
+                content += `${row.date},${row.region.rib},${row.region.pos},${row.pattern},${row.durationSec},${row.metrics.pain},${row.metrics.mobility},"${row.notes.replace(/"/g, '""')}"\n`;
+            });
+            type = 'text/csv';
+            filename += '.csv';
+        }
+
+        const blob = new Blob([content], { type });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        a.click();
+    }
+}
+
+// Initialize App
+const app = new RibApp();
+
+// Inject some dummy data for demonstration if empty
+if(!localStorage.getItem('ribRecoverySessions')) {
+    const dummy = [
+        {id: 1, date: new Date(Date.now() - 86400000).toISOString(), region: {rib: 7, pos: 'posterior'}, pattern: '4-7-8', durationSec: 600, metrics: {pain: 4, mobility: 6}, notes: "Felt tight initially, released after 5 mins", events: []},
+        {id: 2, date: new Date(Date.now() - 172800000).toISOString(), region: {rib: 9, pos: 'lateral'}, pattern: 'bucket-handle', durationSec: 300, metrics: {pain: 2, mobility: 8}, notes: "Good movement today", events: []}
+    ];
+    localStorage.setItem('ribRecoverySessions', JSON.stringify(dummy));
+    app.loadHistory();
+}
+
+</script>
+</body>
+</html>

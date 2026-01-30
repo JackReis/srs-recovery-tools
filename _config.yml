@@ -1,0 +1,15 @@
+# GitHub Pages Configuration
+theme: null
+title: SRS Recovery Tools
+description: Interactive Slipped Rib Syndrome Recovery Coordinator
+show_downloads: false
+google_analytics:
+
+# Build settings
+markdown: kramdown
+
+# Exclude from processing
+exclude:
+  - README.md
+  - .gitignore
+  - LICENSE
